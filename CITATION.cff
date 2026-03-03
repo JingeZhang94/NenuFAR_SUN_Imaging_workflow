@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "NenuFAR_SUN_Imaging_workflow"
+authors:
+  - family-names: Zhang
+    given-names: Jinge
+    email: Jinge.Zhang@obspm.fr
+repository-code: "https://github.com/JingeZhang94/NenuFAR_SUN_Imaging_workflow"
+license: MIT
