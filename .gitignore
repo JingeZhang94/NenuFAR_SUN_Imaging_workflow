@@ -1,0 +1,21 @@
+cat > .gitignore << 'EOF'
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+
+# outputs / big files (adjust to your workflow)
+step*_outputs_*/
+quicklook/
+corr_fits/
+*.mp4
+*.gif
+*.png
+*.fits
+
+# temp
+*.log
+EOF
+# CASA database (generated / large)
+CasA.sourcedb/
+*.sourcedb/
