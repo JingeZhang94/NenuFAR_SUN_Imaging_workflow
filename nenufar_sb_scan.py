@@ -381,3 +381,208 @@ def split_casa_candidates_relative_to_sun(sun_event_dir, casa_event_dirs):
             after.append(ev)
 
     return sorted(before), sorted(after)
+
+
+    id="backend-upgrade-1"
+def split_cal_candidates_relative_to_sun(sun_event_dir, cal_event_dirs):
+    """
+    Split calibrator candidates into (before_list, after_list) relative to SUN start time.
+    Generic version of split_casa_candidates_relative_to_sun.
+    """
+    sun_name = Path(sun_event_dir).name
+    try:
+        sun_start = int(sun_name.split("_")[1])  # e.g. 101000
+    except Exception:
+        sun_start = None
+
+    before, after = [], []
+    for ev in cal_event_dirs:
+        name = Path(ev).name
+        try:
+            t1 = int(name.split("_")[1])
+            t2 = int(name.split("_")[3])
+        except Exception:
+            after.append(ev)
+            continue
+
+        if sun_start is None:
+            after.append(ev)
+        elif t2 <= sun_start:
+            before.append(ev)
+        else:
+            after.append(ev)
+
+    return sorted(before), sorted(after)
+
+
+def scan_sun_and_cal_by_ymd(
+    base,
+    workroot,
+    year,
+    month,
+    day,
+    freq_range_mhz=None,
+    cal_source="AUTO",
+    cal_event_dir=None,
+):
+    """
+    Generic calibrator-aware version.
+
+    Parameters
+    ----------
+    cal_source : str
+        "AUTO", "CAS_A", "CYG_A", "VIR_A"
+    cal_event_dir : str or None
+        Explicit calibrator event dir selected in UI. If None, choose closest.
+
+    Output DataFrame columns
+    ------------------------
+    sb, ctr_mhz, sun_ms,
+    cal_pre_ms, cal_post_ms,
+    cal_chosen_ms, cal_chosen_tag
+
+    Also writes selected_sb_pair_list.json with generic fields.
+    For backward compatibility, also writes casa_* aliases.
+    """
+    from pathlib import Path
+    import json
+
+    # 1) pick SUN event
+    sun_event = pick_event_dir(base, year, month, day, "SUN_TRACKING")
+
+    # 2) find calibrator candidates
+    allowed_sources = ["CAS_A", "CYG_A", "VIR_A"]
+
+    if cal_source == "AUTO":
+        cal_candidates = []
+        detected_sources = []
+        for src in allowed_sources:
+            tag = f"{src}_TRACKING"
+            found = list_event_dirs_by_date(base, year, month, day, tag)
+            if found:
+                cal_candidates.extend(found)
+                detected_sources.extend([src] * len(found))
+    else:
+        if cal_source not in allowed_sources:
+            raise ValueError(f"Unsupported cal_source={cal_source}. Must be one of {allowed_sources} or AUTO.")
+        tag = f"{cal_source}_TRACKING"
+        cal_candidates = list_event_dirs_by_date(base, year, month, day, tag)
+        detected_sources = [cal_source] * len(cal_candidates)
+
+    if not cal_candidates:
+        if cal_source == "AUTO":
+            raise FileNotFoundError(
+                f"No calibrator candidates found for {year:04d}-{month:02d}-{day:02d}. "
+                f"Tried: CAS_A_TRACKING / CYG_A_TRACKING / VIR_A_TRACKING"
+            )
+        else:
+            raise FileNotFoundError(
+                f"No {cal_source}_TRACKING candidates found for {year:04d}-{month:02d}-{day:02d}."
+            )
+
+    # 3) split into pre/post relative to SUN start
+    cal_pre, cal_post = split_cal_candidates_relative_to_sun(sun_event, cal_candidates)
+
+    # 4) choose calibrator event
+    if cal_event_dir is None:
+        cal_event = pick_closest_calibrator(sun_event, cal_candidates)
+    else:
+        cal_event = cal_event_dir
+
+    # determine chosen tag
+    cal_chosen_tag = "unknown"
+    if str(cal_event) in [str(x) for x in cal_pre]:
+        cal_chosen_tag = "pre"
+    elif str(cal_event) in [str(x) for x in cal_post]:
+        cal_chosen_tag = "post"
+
+    # infer chosen source from folder name
+    chosen_name = Path(cal_event).name
+    cal_source_chosen = None
+    for src in allowed_sources:
+        if chosen_name.endswith(f"{src}_TRACKING"):
+            cal_source_chosen = src
+            break
+
+    # 5) resolve L1 dirs
+    sun_l1 = infer_l1_dir(sun_event)
+    cal_l1_chosen = infer_l1_dir(cal_event)
+
+    cal_l1_pre = infer_l1_dir(cal_pre[-1]) if cal_pre else None
+    cal_l1_post = infer_l1_dir(cal_post[0]) if cal_post else None
+
+    # 6) scan SUN SBs
+    df_sel, _meta = scan_sb_freq(
+        sun_l1,
+        workdir=Path(workroot) / Path(sun_event).name,
+        freq_range_mhz=freq_range_mhz,
+    )
+    df_sel = df_sel.copy()
+    df_sel["sun_ms"] = df_sel["ms"]
+
+    # 7) build calibrator paths
+    def _mk(msdir, sb):
+        return str(Path(msdir) / sb) if msdir is not None else None
+
+    df_sel["cal_pre_ms"] = df_sel["sb"].apply(lambda sb: _mk(cal_l1_pre, sb))
+    df_sel["cal_post_ms"] = df_sel["sb"].apply(lambda sb: _mk(cal_l1_post, sb))
+    df_sel["cal_chosen_ms"] = df_sel["sb"].apply(lambda sb: _mk(cal_l1_chosen, sb))
+
+    # backward-compatible aliases
+    df_sel["casa_pre_ms"] = df_sel["cal_pre_ms"]
+    df_sel["casa_post_ms"] = df_sel["cal_post_ms"]
+    df_sel["casa_chosen_ms"] = df_sel["cal_chosen_ms"]
+
+    # 8) write plan JSON
+    out_json = Path(workroot) / Path(sun_event).name / "selected_sb_pair_list.json"
+    payload = {
+        "date": f"{int(year):04d}-{int(month):02d}-{int(day):02d}",
+        "freq_range_mhz": None if freq_range_mhz is None else [float(freq_range_mhz[0]), float(freq_range_mhz[1])],
+
+        "sun_event": str(sun_event),
+
+        "cal_source_request": cal_source,
+        "cal_source_chosen": cal_source_chosen,
+        "cal_candidates": [str(x) for x in cal_candidates],
+        "cal_pre": [str(x) for x in cal_pre],
+        "cal_post": [str(x) for x in cal_post],
+        "cal_event_chosen": str(cal_event),
+        "cal_chosen_tag": cal_chosen_tag,
+
+        "sun_l1": str(sun_l1),
+        "cal_l1_chosen": str(cal_l1_chosen) if cal_l1_chosen else None,
+
+        "selected_sb": df_sel["sb"].tolist(),
+        "ctr_mhz": df_sel["ctr_mhz"].tolist(),
+        "sun_ms": df_sel["sun_ms"].tolist(),
+        "cal_pre_ms": df_sel["cal_pre_ms"].tolist(),
+        "cal_post_ms": df_sel["cal_post_ms"].tolist(),
+        "cal_chosen_ms": df_sel["cal_chosen_ms"].tolist(),
+    }
+
+    # backward compatibility with old workflow
+    payload.update({
+        "casa_candidates": payload["cal_candidates"],
+        "casa_pre": payload["cal_pre"],
+        "casa_post": payload["cal_post"],
+        "casa_event_chosen": payload["cal_event_chosen"],
+        "casa_chosen_tag": payload["cal_chosen_tag"],
+        "casa_l1_chosen": payload["cal_l1_chosen"],
+        "casa_ms": payload["cal_chosen_ms"],
+    })
+
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_json, "w") as f:
+        json.dump(payload, f, indent=2)
+
+    meta = {
+        "sun_event": str(sun_event),
+        "cal_source_request": cal_source,
+        "cal_source_chosen": cal_source_chosen,
+        "cal_candidates": [str(x) for x in cal_candidates],
+        "cal_event_chosen": str(cal_event),
+        "cal_chosen_tag": cal_chosen_tag,
+        "json_sel": str(out_json),
+    }
+
+    return df_sel, meta

@@ -2,213 +2,287 @@
 
 # NenuFAR_SUN_Imaging_workflow
 
-Reproducible NenuFAR solar interferometric imaging workflow **(Step1–4)** plus **Step5 ionospheric-offset correction** and **centroid / quicklook** tools.
+**`SUN_Imaging.ipynb`** is the main notebook interface of this workflow.
 
-This repository provides a lightweight, notebook-driven UI (via `ipywidgets`) to:
-- select NenuFAR solar sub-bands (SBs) and associated CASA calibrator MS products,
-- run standard imaging steps (**DP3 + WSClean**),
-- generate quicklooks / movies,
-- derive a quiet-Sun ionospheric offset solution (**Step5A**),
-- apply the solution to selected/all FITS (**Step5B**, producing corrected FITS + before/after quicklooks),
-- measure source centroids with a 2D Gaussian fit in an ROI (**Step5C**, saving tables/records + optional movie).
+It provides a **simple and efficient way** to process **NenuFAR solar interferometric imaging data**, including the main imaging workflow and the most commonly used post-processing tools.
 
-> **Scope:** This is a *workflow + UI* for producing solar imaging products and diagnostic quicklooks. The emphasis is on reproducibility and practical usage on the NenuFAR computing environment.
+It is intended to make the processing chain more accessible and reproducible, including for **non-specialist users**.
 
 ---
 
-## Important requirements (read first)
+## Overview
 
-### 1) Where to run / access policy (Nançay servers)
-This workflow is intended to run on the **Nançay computing environment** (e.g., `nancep`), where NenuFAR data paths and the standard processing toolchain are available.
+This repository provides a lightweight UI-based workflow (via `ipywidgets`) to:
 
-Access to the relevant data and compute environment may require approval from the **NenuFAR KP11 (Solar) team**.  
-For permission requests, please contact the current PI: **Carine Briand** (carine.briand@obspm.fr).
+- select NenuFAR solar sub-bands (SBs) and associated calibrator products,
+- prepare and process raw interferometric data,
+- run the main imaging chain based on **DP3 + WSClean**,
+- generate FITS quicklooks / movies,
+- derive and apply WCS offset corrections from Quiet Sun frames,
+- measure source centroids and uncertainties,
+- perform beam-propagation / source-tracking analysis from selected FITS images.
 
-### 2) Two external files are required (not included in this repo)
-
-**(a) Container image**  
-`linc_latest.sif`  
-Contains the runtime environment used for DP3/WSClean execution.
-
-**(b) Calibration database**  
-`CasA.sourcedb`  
-Used by the calibration steps.
-
-If you do not have access to these files (or need verified paths), **please contact the author**.
+> **Important:**  
+> The **main imaging workflow (Step1–Step4)** is intended to run in the **Nançay computing environment** (in particular on **`nancep`**), because the raw NenuFAR interferometric **MS data** are stored there and are typically too large to be practically downloaded and reprocessed elsewhere in a conventional way.  
+> The **post-processing tools** can also be used separately on selected FITS products.
 
 ---
 
-## Requirements
+## Main workflow vs post-processing tools
 
-### Python environment
-Tested with Python 3.8+ (recommend 3.12.3 typical for SunPy/Astropy stacks). Required Python packages:
-- `numpy`, `matplotlib`
-- `astropy`
-- `sunpy`
-- `ipywidgets`
-- `scipy` (for 2D Gaussian fitting)
+### Main imaging workflow
 
-Optional:
-- `ffmpeg` (recommended) for MP4 movie generation; otherwise GIF fallback may be used.
+The core imaging workflow consists of four steps:
 
-### External tools (HPC / cluster)
-For Step1–4 you need the standard imaging toolchain available on your system, e.g.
-- `DP3`
-- `wsclean`
-- container runtime (e.g. `apptainer` / `singularity`)
+- **Step1 — Prepare MS**  
+  Prepare calibrator and solar MS products for further processing.
 
-> Step5 (A/B/C) operates on **FITS images** produced by Step4 and does not require DP3/WSClean.
+- **Step2 — ROI extraction**  
+  Extract the solar time window / ROI from the prepared solar MS.
+
+- **Step3 — Calibration transfer**  
+  Derive gain solutions from the calibrator data and apply them to the solar ROI MS.
+
+- **Step4 — Imaging**  
+  Run WSClean to generate FITS image products, and optionally generate quicklook PNGs / movies.
+
+These tools are provided in:
+
+- `nenufar_ui.py`
+
+### Post-processing tools
+
+The workflow also includes a set of post-processing tools that operate on FITS products:
+
+- **Post-processing tool A — WCS offset solve**  
+  Derive a WCS offset solution from a Quiet Sun frame.
+
+- **Post-processing tool B — WCS correction apply**  
+  Apply the saved WCS offset solution to selected FITS frames.
+
+- **Post-processing tool C — Centroid measurement**  
+  Measure source centroids and uncertainties from selected FITS frames.
+
+- **Post-processing tool D — Beam propagation / projected source-height analysis**  
+  Use measured source positions to derive propagation diagnostics such as projected displacement or solar altitude.
+
+These tools are provided in:
+
+- `post_analysis_tools.py`
 
 ---
 
 ## Repository layout
 
-Main entry points:
-- `nenufar_ui.py` — notebook UI functions (Step1–5)
-- `workflow_v020.ipynb` — example notebook showing how to run the workflow
-- `nenufar_sb_scan.py` — helper for scanning candidate SBs / associations
+Main files:
+
+- `SUN_Imaging.ipynb` — example notebook and recommended entry point
+- `nenufar_ui.py` — main imaging workflow tools (**Step1–Step4**)
+- `post_analysis_tools.py` — post-processing tools
+- `nenufar_sb_scan.py` — helper for scanning candidate sub-bands and associated products
+- `README.md`
+- `CITATION.cff`
+- `LICENSE`
+
+Calibrator sky models:
+
+- `CasA.skymodel` — sky model for **Cassiopeia A**
+- `CygA.skymodel` — sky model for **Cygnus A**
+- `VirA.skymodel` — sky model for **Virgo A**
+
+Local processing environment:
+
+- `linc_latest.sif` — local container image used for the main imaging workflow, including **DP3** and **WSClean**.  
+  This file is **not included** in the GitHub repository and should be obtained separately. See **Important requirements (read first)** below.
+---
+
+## Important requirements (read first)
+
+The full imaging workflow (**Step1–Step4**) is intended to run in the **Nançay computing environment**, in particular on **`nancep`**.
+
+The main reason is practical: the raw NenuFAR interferometric **MS data** are stored there and are typically very large, so they are **not meant to be downloaded and reprocessed elsewhere in a conventional way**. The workflow is therefore designed to run **close to the data**.
+
+In the current workflow setup:
+
+- the raw NenuFAR **MS data** are available at Nançay
+- the required calibrator sky models are provided in this repository
+- the main imaging software environment is provided through the local container **`linc_latest.sif`**, which includes **DP3** and **WSClean**
+
+Access to the relevant data and computing environment may still require approval from the **NenuFAR KP11 (Solar) team**.
+
+For access / permission questions, please contact the current PI:
+
+- **Carine Briand** — `carine.briand@obspm.fr`
+
+For users outside Nançay, the post-processing tools can still be used separately on selected FITS products.
+
+### Container for the main imaging workflow
+
+The full **Step1–Step4** imaging chain uses the container:
+
+- `linc_latest.sif`
+
+This container includes the main processing tools, in particular **DP3** and **WSClean**.
+
+Because of its size, this file is **not distributed through the GitHub repository**.
+
+A local copy is currently available on **`nancep`** at:
+
+- `/data/jzhang/linc_latest.sif`
+
+Users on `nancep` can copy this file into their own repository / working directory if needed.
+
+The container source referenced here follows the LOFAR data-processing tutorial materials by **Harish Vedantham**, and the related tutorial resource is gratefully acknowledged here：
+
+- https://stellar-h2020.eu/index.php/2023/05/23/introduction-to-lofar-data-processing-tutorial/
+
+Example command:
+
+```bash
+singularity pull docker://astronrd/linc
+```
+
+---
+
+## Installation requirements
+
+To run **`SUN_Imaging.ipynb`**, a standard Python notebook environment is needed.
+
+Tested with:
+
+- **Python 3.12.3**
+- **JupyterLab** / notebook
+- `ipywidgets` enabled
+
+### Required Python packages
+
+Install the following packages:
+
+```bash
+pip install jupyterlab notebook ipywidgets ipympl
+pip install numpy pandas scipy matplotlib imageio
+pip install astropy sunpy reproject
+pip install python-casacore
+```
+
+### Example local environment
+
+A simple example using `venv`:
+
+```bash
+python -m venv nenufar_sun_env
+source nenufar_sun_env/bin/activate
+pip install --upgrade pip
+pip install jupyterlab notebook ipywidgets ipympl
+pip install numpy pandas scipy matplotlib imageio
+pip install astropy sunpy reproject
+pip install python-casacore
+```
+
+Then launch:
+
+```bash
+jupyter lab
+```
+
+and open:
+
+- `SUN_Imaging.ipynb`
+
+> **Note:**  
+> The notebook interface itself can be set up in a standard Python environment.  
+> However, the full **Step1–Step4** imaging workflow is still intended to run in the **Nançay / nancep** environment, where the raw NenuFAR **MS data** are stored.
 
 ---
 
 ## Quick start
 
-### 1) Clone the repository
+### 1) Log in to the Nançay environment
+
+Make sure you are logged in to the **`nancep`** server and working in your own workspace.
+
+This is important because the raw NenuFAR interferometric **MS data** are stored there, and the main imaging workflow is designed to run close to the data.
+
+### 2) Clone the repository
+
 ```bash
 git clone https://github.com/JingeZhang94/NenuFAR_SUN_Imaging_workflow.git
 cd NenuFAR_SUN_Imaging_workflow
 ```
 
+### 3) Prepare the local workflow environment
+
+### 3) Prepare the local workflow environment
+
+1. Create and activate a Python environment, then install the required packages listed above.
+2. Make sure the required container `linc_latest.sif` is available locally, as noted above (see **Important requirements (read first)**).
+
+### 4) Open the notebook
+
+Launch JupyterLab:
+
+```bash
+jupyter lab
+```
+
+and open:
+
+- `SUN_Imaging.ipynb`
+
+### 5) Set your output paths before running
+
+Before running the workflow, make sure the second configuration cell in the notebook is edited correctly for your own setup, especially the output paths.
+
+This is important because the notebook writes workflow products to the paths defined there.
+
+
+### 6)Run the notebook step by step
+
+Run the notebook cells one by one, from top to bottom.
+
+Typical usage:
+
+1. configure the paths in the notebook
+2. load and inspect the selected data
+3. launch each UI from the notebook
+4. inspect outputs in the corresponding output folders
+
 ---
 
-### 2) Open the example notebook
+## Credit, ownership, and responsible use
 
-On the Nançay / `nancep` environment, open the example notebook:
+This workflow was independently developed by **Dr. Jinge Zhang** during his postdoctoral appointment at the **Observatoire de Paris** in 2024-2026.
 
-- `workflow_v020.ipynb`
+The code and associated intellectual property belong to the **Observatoire de Paris**, within the framework of the relevant institutional and project context. In addition, a version of this workflow is intended to be distributed and maintained within the **SOLER / Observatoire GitLab infrastructure** for institutional use, long-term maintenance, and future updates.
 
-This notebook is the recommended entry point. You will run the workflow by executing a small number of cells (Step1 → Step5).  
-Each step launches an interactive UI (`ipywidgets`): you set the paths/parameters in the widgets, then click **Run**.
+If this workflow contributes to scientific results, derived data products, or future software developments, users are expected to:
 
-**Typical usage pattern**
-1. Open `workflow_v020.ipynb` (JupyterLab or VSCode Jupyter both work).
-2. Run cells from top to bottom.
-3. In each step UI:
-   - choose the SB(s) / FITS,
-   - adjust parameters if needed,
-   - click **Run**,
-   - check the printed log + generated outputs under the corresponding `step*_outputs_YYYYMMDD/` folder.
+- **cite this workflow and its software release**
+- acknowledge its contribution appropriately in related publications, presentations, and derived projects
 
-If you only want to work on ionospheric correction / centroid tools, you can start from **Step5** directly as long as you already have Step4 FITS images available.
+This repository is shared to support scientific use, reproducibility, and collaboration. These principles are also fully aligned with the spirit of the **SOLER project** and with the original purpose for which this workflow was developed. Its use should respect normal standards of academic attribution, software credit, and intellectual-property respect.
 
-### 3) Run Step1–Step4 (imaging + quicklook)
+Substantial reuse, repackaging, reshaping, or extension of this workflow without proper attribution is strongly discouraged, especially when this involves AI-assisted restructuring or redevelopment based on the existing concepts, design, or implementation of the tool.
 
-All Step1–Step4 operations are driven from the example notebook `workflow_v020.ipynb`.
-You typically run the notebook **top → bottom**, and each step opens an interactive UI (`ipywidgets`).
+---
 
-#### 3.1 (Optional) Scan & select SB candidates (Nançay / nancep only)
-If you want to scan available NenuFAR SBs and quickly locate relevant sub-bands:
+## Citation
 
-- Open the Step0/scan cell in `workflow_v020.ipynb`
-- Set the base path(s) (e.g. NenuFAR data root) and work directory
-- Click **Run** in the UI
-- The table output can be used to identify SBs to process
+If you use this workflow in scientific work, please cite the repository / software release using the information provided in:
 
-> Note: this scan utility assumes the Nançay / `nancep` computing environment and access permissions to NenuFAR data paths.
+- `CITATION.cff`
 
-#### 3.2 Step1 — Prepare MS (CASA pre/post) per SB
-- Run the Step1 cell (calls `nenufar_ui.run_step1_ui(...)`)
-- In the UI:
-  - choose SB(s)
-  - choose calibration mode (dropdown / pre / post)
-  - set output root (recommended: `.../step1_outputs_YYYYMMDD`)
-  - click **Run Step-1**
-- Outputs:
-  - per-SB folder under `step1_outputs_YYYYMMDD/`
-  - log printed in the notebook + written to the output folder
+Please also cite the Zenodo record:
 
-#### 3.3 Step2 — Time ROI cut (make ROI MS)
-- Run the Step2 cell (calls `nenufar_ui.run_step2_zoom_ui(...)`)
-- In the UI:
-  - set Start / End time range
-  - select SB(s)
-  - click **Run Step-2 (ROI)**
-- Outputs:
-  - ROI MS under `step2_outputs_YYYYMMDD/ROI/SBxxx/`
-  - log printed + saved
+- **Cite (all versions):** https://doi.org/10.5281/zenodo.18848880
 
-#### 3.4 Step3 — Calibration (DP3)
-- Run the Step3 cell (calls `nenufar_ui.run_step3_calib_ui(...)`)
-- In the UI:
-  - select SB(s)
-  - click **Run Step-3 (Calib)**
-- Outputs:
-  - per-SB calibration products under `step3_outputs_YYYYMMDD/SBxxx/`
-  - parset files + log
+---
 
-#### 3.5 Step4 — Imaging (WSClean) + quicklooks
-- Run the Step4 imaging cell (calls `nenufar_ui.run_step4_wsclean_ui(...)`)
-- In the UI:
-  - set WSClean parameters (image size, scale, weighting, robust, etc.)
-  - select SB(s)
-  - click **Run Step-4 (WSClean)**
-- Outputs:
-  - FITS images under `step4_outputs_YYYYMMDD/SBxxx/*-image.fits`
+## License
 
-Then generate Step4-style PNG quicklooks / movies:
-- Run the Step4 quicklook cell (calls `nenufar_ui.run_step4_quicklook_ui(...)`)
-- In the UI:
-  - select one or multiple `*-image.fits`
-  - set crop size + color limits + contours
-  - click **Generate Quicklooks**
-- Outputs:
-  - `step4_outputs_YYYYMMDD/quicklook/SBxxx/*.png`
-  - optional movie (`*.mp4` or `*.gif`) + `quicklook.log`
+See:
 
-### 4) Run Step5A / Step5B / Step5C (ionospheric offset correction + centroid tool)
-
-Step5 operates on FITS images (typically produced by Step4).
-
-#### Step5A — solve an ionospheric offset from a Quiet Sun frame
-- Run the **Step5A** cell in the notebook.
-- In the widget:
-  - choose the SB,
-  - choose a *Quiet Sun* FITS frame (before the burst onset),
-  - set an ROI (arcsec) that isolates the Quiet Sun emission,
-  - click **Solve Step5A**.
-- Output (a small JSON solution + diagnostic figure) is written under:
-  - `step_iocorrect_outputs_YYYYMMDD/SBxxx/step5a_solution.json`
-
-The solution contains the WCS shift to apply (in pixel space on the Step4 map grid).
-
-#### Step5B — apply the Step5A solution to FITS (write corrected FITS + before/after quicklooks)
-- Run the **Step5B** cell.
-- In the widget:
-  - choose the SB,
-  - either:
-    - select specific FITS files with the mouse, **or**
-    - enable **Select ALL image.fits** to batch-process everything,
-  - click **Run Step5B (apply)**.
-- Outputs are written under:
-  - corrected FITS: `step_iocorrect_outputs_YYYYMMDD/SBxxx/corr_fits/*.fits`
-  - before/after quicklooks: `step_iocorrect_outputs_YYYYMMDD/SBxxx/quicklook_step5b/`
-  - log: `step_iocorrect_outputs_YYYYMMDD/SBxxx/step5b_apply.log`
-
-#### Step5C — centroid extraction (works for raw Step4 FITS or corrected Step5B FITS)
-- Run the **Step5C** cell.
-- In the widget:
-  - choose **Source**: `Step4 raw` or `Step5B corrected`,
-  - select FITS file(s) (or select all),
-  - define an ROI (arcsec) around the radio source,
-  - set `thresh_frac` and `min_points` for the 2D Gaussian fit,
-  - click **Run Step5C (centroid)**.
-- Outputs are written under:
-  - quicklook PNGs: `step_iocentroid_outputs_YYYYMMDD/.../quicklook_centroid/`
-  - table (CSV): `centroid_results.csv`
-  - records (JSONL): `centroid_results.jsonl`
-  - log: `step5c_centroid.log`
-  - optional movie (if enabled): `centroid_movie.mp4` (or GIF fallback)
-
-The centroid table/records include (when available): date tag, SB, FITS filename (t-index), observation time, ROI bounds, and centroid coordinates (arcsec / world coordinates).
+- `LICENSE`
 
 ---
 
@@ -216,5 +290,4 @@ The centroid table/records include (when available): date tag, SB, FITS filename
 
 This project has received funding from the European Union's Horizon Europe research and innovation programme under grant agreement No 101134999. This repository reflects only the author's view and the European Commission is not responsible for any use that may be made of the information it contains.
 
-
-**Cite (all versions):** https://doi.org/10.5281/zenodo.18848880  
+Support from **Carine Briand** (NenuFAR KP11 PI), as well as discussions and suggestions from **Alan Loh**, **Julien Girard**, and **Shilpi Bhunia**, are gratefully acknowledged.
